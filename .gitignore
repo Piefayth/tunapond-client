@@ -1,3 +1,4 @@
 seed.txt
 .env
 .vscode/
+*.sk

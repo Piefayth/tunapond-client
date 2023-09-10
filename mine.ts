@@ -1,6 +1,7 @@
 import {
     Constr,
     Lucid, 
+    Network, 
     fromText, 
     toHex,
 } from "https://deno.land/x/lucid@0.10.1/mod.ts"
@@ -70,7 +71,8 @@ type GenericServerMessage = {
     message: string
 }
 
-const lucid = await Lucid.new(undefined, "Mainnet")
+const cardanoNetwork = Deno.env.get("NETWORK") as Network || "Mainnet" 
+const lucid = await Lucid.new(undefined, cardanoNetwork)
 lucid.selectWalletFromSeed(Deno.readTextFileSync("seed.txt"))
 
 const miners = [
@@ -103,41 +105,50 @@ export async function mine(poolUrl: string) {
     });
 
     const session = await joinPool(poolUrl)
-    let targetState = blockToTargetState(session.current_block)
     const miner = selectMinerFromEnvironment()
-    
+    let targetState = blockToTargetState(session.current_block)
+    let wasSubmissionRejected = false
+
     while (true) {
-        const results = await miner.pollResults(targetState)
-        if (results.length > 0) {
-            const submission: MiningSubmission = {
-                address: session.address,
-                entries: results,
-            }
-            const submitResult = await fetch(`${poolUrl}/submit`, {
-                method: 'POST',
-                body: JSON.stringify(submission),
-                headers: {
-                    ['Content-Type']: 'application/json'
-                }
-            })
-            const submissionResponse: SubmissionResponse = await submitResult.json()
-            
-            console.log(`Submitted ${results.length} hashes!`)
+        const results = await miner.pollResults(targetState, wasSubmissionRejected)
+        wasSubmissionRejected = false
+        
+        const submission: MiningSubmission = {
+            address: session.address,
+            entries: results,
+        }
 
-            const rejectedResultCount = results.length - submissionResponse.num_accepted
-            if (rejectedResultCount > 0) {
-                console.warn(`Pool rejected ${rejectedResultCount} results. Check your miner output.`)
+        const submitResult = await fetch(`${poolUrl}/submit`, {
+            method: 'POST',
+            body: JSON.stringify(submission),
+            headers: {
+                ['Content-Type']: 'application/json'
             }
+        })
 
+        if (submitResult.status != 200) {
+            wasSubmissionRejected = true
+            continue;
+        }
+
+        const submissionResponse: SubmissionResponse = await submitResult.json()
+        
+        const rejectedResultCount = results.length - submissionResponse.num_accepted
+        if (rejectedResultCount > 0) {
+            console.warn(`Pool rejected ${rejectedResultCount} results. Check your miner output.`)
+        }
+
+        if (submissionResponse.working_block) {
             if (submissionResponse.working_block.block_number != targetState.fields[1] as unknown as number) {
                 console.log(`Pool provided new block ${submissionResponse.working_block.block_number}.`)
                 targetState = blockToTargetState(submissionResponse.working_block)
+                // no point waiting, we got a new block!
+            } else {
+                await delay(5000)
             }
         } else {
-            // users might want to request an updated datum anyway?
+            await delay(5000)
         }
-
-        await delay(1000)
     }
     
 }

@@ -18,10 +18,10 @@ export class PieCUDAMiner extends Miner {
         this.exePath = exePath
     }
 
-    async pollResults(targetState: TargetState): Promise<MiningSubmissionEntry[]> {
+    async pollResults(targetState: TargetState, wasSubmissionRejected: boolean): Promise<MiningSubmissionEntry[]> {
         const didStateChange = (this.oldTargetState?.fields[0] || 0) != targetState.fields[0]
 
-        if (didStateChange) {
+        if (didStateChange || wasSubmissionRejected) {
             if (this.p) {
                 try {
                     this.p.kill()
@@ -40,6 +40,7 @@ export class PieCUDAMiner extends Miner {
 
             this.p = this.cmd.spawn()
 
+            this.storedSolutions = []
             this.oldTargetState = targetState
             return Promise.resolve([])
         } else {
@@ -47,25 +48,27 @@ export class PieCUDAMiner extends Miner {
                 return Promise.resolve([])
             }
 
-            const decoder = new TextDecoder();
+            const decoder = new TextDecoder()
             const reader = this.p.stdout.getReader()
 
             while (true) {
-                const { done, value } = await reader.read();
+                const { done, value } = await reader.read()
         
                 if (done) {
-                    break;
+                    break
                 }
         
-                this.stringBuffer += decoder.decode(value || new Uint8Array());
+                this.stringBuffer += decoder.decode(value || new Uint8Array())
                 
-                const lines = this.stringBuffer.split('\n');
+                const lines = this.stringBuffer.split('\n')
                 for (let i = 0; i < lines.length - 1; i++) {
-                    const [sha, nonce] = lines[i].split('|').map(s => s.trim());
-                    this.storedSolutions.push({ sha, nonce });
+                    const [sha, nonce] = lines[i].split('|').map(s => s.trim())
+                    this.storedSolutions.push({ sha, nonce })
                 }
-        
-                this.stringBuffer = lines[lines.length - 1];
+                
+                // TODO: if one of the shas we just read was full difficulty, break
+
+                this.stringBuffer = lines[lines.length - 1]
         
                 if (this.storedSolutions.length >= SEND_BATCH_SIZE) {
                     break;
@@ -74,7 +77,6 @@ export class PieCUDAMiner extends Miner {
 
             reader.releaseLock()
             
-            // TODO: check if solution is a real solve, in which case return immediately
             const solutions = [...this.storedSolutions]
             this.storedSolutions = []
 
