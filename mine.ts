@@ -2,9 +2,6 @@ import {
     Constr,
     Lucid, 
     Network, 
-    fromHex, 
-    fromText, 
-    toHex,
 } from "https://deno.land/x/lucid@0.10.1/mod.ts"
 import { PieCUDAMiner } from "./miners/piecuda.ts"
 import { Miner } from "./miner.ts";
@@ -22,15 +19,8 @@ type MiningSubmission = {
 
 type SubmissionResponse = {
     num_accepted: number,
-    session_id: number,
+    nonce: string,
     working_block: Block,
-}
-
-type Registration = {
-    address: string,
-    payload: string,
-    key: string,
-    signature: string
 }
 
 type Block = {
@@ -42,14 +32,6 @@ type Block = {
     current_time: number
     extra: string
     interlink: string[]
-}
-
-type MiningSession = {
-    address: string
-    message: string
-    session_id: number
-    start_time: string
-    current_block: Block
 }
 
 type Work = {
@@ -68,10 +50,6 @@ function blockToTargetState(block: Block, poolNonce: string): TargetState {
         BigInt(block.difficulty_number),
         BigInt(block.epoch_time)
     ])
-}
-
-type GenericServerMessage = {
-    message: string
 }
 
 const cardanoNetwork = Deno.env.get("NETWORK") as Network || "Mainnet" 
@@ -100,61 +78,62 @@ function selectMinerFromEnvironment(): Miner {
     }
 }
 
-export async function mine(poolUrl: string) {
-    const address = await lucid.wallet.address()
-
-    const maybeWork = await getWork(poolUrl)
-    if (!maybeWork) {
-        throw Error("Can't start main loop, no initial work!");
-    }
-    const { nonce, current_block } = maybeWork
-
-    const miner = selectMinerFromEnvironment()
-    let targetState = blockToTargetState(current_block, nonce)
-    let wasSubmissionRejected = false
+const DELAY = 2000
+async function doWork(poolUrl: string, miner: Miner, address: string, targetState: TargetState, wasSubmitRejected = false) {
+    console.log("IN WORK LOOP with block " + targetState.fields[1])
+    const results = await miner.pollResults(targetState, wasSubmitRejected)
     
-    while (true) {
-        const results = await miner.pollResults(targetState, wasSubmissionRejected)
-        wasSubmissionRejected = false
-
-        const submission: MiningSubmission = {
-            address: address,
-            entries: results,
-        }
-
-        const submitResult = await fetch(`${poolUrl}/submit`, {
-            method: 'POST',
-            body: JSON.stringify(submission),
-            headers: {
-                ['Content-Type']: 'application/json'
+    if (results.length === 0) {
+        await delay(DELAY)
+    } else {
+        try {
+            const submissionResponse = await submitWork(poolUrl, address, results)
+            if (submissionResponse.working_block) {
+                const newTargetState = blockToTargetState(submissionResponse.working_block, submissionResponse.nonce)
+                return doWork(poolUrl, miner, address, newTargetState)
             }
-        })
-
-        if (submitResult.status != 200) {
-            wasSubmissionRejected = true
-            continue;
+        } catch (e) {
+            await delay(DELAY)
         }
+    }
 
+    const newWork = await getWork(poolUrl)
+    if (!newWork) {
+        throw Error("Could not get new work from submission response or work endpoint. Is the pool down? Are you connected to the internet?");
+    }
+
+    const newTargetState = blockToTargetState(newWork.current_block, newWork.nonce)
+    return doWork(poolUrl, miner, address, newTargetState)
+}
+
+async function submitWork(poolUrl: string, address: string, work: MiningSubmissionEntry[]): Promise<SubmissionResponse> {
+    const submission: MiningSubmission = {
+        address: address,
+        entries: work,
+    }
+
+    const submitResult = await fetch(`${poolUrl}/submit`, {
+        method: 'POST',
+        body: JSON.stringify(submission),
+        headers: {
+            ['Content-Type']: 'application/json'
+        }
+    })
+
+    if (submitResult.status != 200) {
         const submissionResponse: SubmissionResponse = await submitResult.json()
-        
-        const rejectedResultCount = results.length - submissionResponse.num_accepted
-        if (rejectedResultCount > 0) {
-            console.warn(`Pool rejected ${rejectedResultCount} results. Check your miner output.`)
-        }
-
-        if (submissionResponse.working_block) {
-            if (submissionResponse.working_block.block_number != targetState.fields[1] as unknown as number) {
-                console.log(`Pool provided new block ${submissionResponse.working_block.block_number}.`)
-                targetState = blockToTargetState(submissionResponse.working_block, nonce)
-                // no point waiting, we got a new block!
-            } else {
-                await delay(5000)
-            }
-        } else {
-            await delay(5000)
-        }
+        console.log("Server was unable to submit work: " + JSON.stringify(submissionResponse))
+        throw Error("Server was unable to submit work.")
     }
-    
+
+    const submissionResponse: SubmissionResponse = await submitResult.json()
+        
+    const rejectedResultCount = work.length - submissionResponse.num_accepted
+    if (rejectedResultCount > 0) {
+        console.warn(`Pool rejected ${rejectedResultCount} results. Check your miner output.`)
+    }
+
+    return submissionResponse
 }
 
 async function getWork(poolUrl: string): Promise<Work | undefined> {
@@ -170,6 +149,22 @@ async function getWork(poolUrl: string): Promise<Work | undefined> {
         console.debug(workResponse)
         console.log("Couldn't get any work!")
     } else {
-        return await workResponse.json() as Work
+        const work = await workResponse.json() as Work
+        return work
     }
+}
+
+export async function mine(poolUrl: string) {
+    const address = await lucid.wallet.address()
+
+    const maybeWork = await getWork(poolUrl)
+    if (!maybeWork) {
+        throw Error("Can't start main loop, no initial work!");
+    }
+    const { nonce, current_block } = maybeWork
+
+    const miner = selectMinerFromEnvironment()
+    const targetState = blockToTargetState(current_block, nonce)
+
+    await doWork(poolUrl, miner, address, targetState)
 }
