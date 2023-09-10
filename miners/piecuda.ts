@@ -47,7 +47,6 @@ export class PieCUDAMiner extends Miner {
         const status = await this.p?.status
         
         if (this.storedSolutions.length >= SEND_BATCH_SIZE || (status?.success == true && this.storedSolutions.length > 0)) {
-            console.log("SENDING SOLVES")
             const solutions = [...this.storedSolutions]
             this.storedSolutions = []
             return solutions

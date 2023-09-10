@@ -82,11 +82,12 @@ const DELAY = 2000
 async function doWork(poolUrl: string, miner: Miner, address: string, targetState: TargetState, wasSubmitRejected = false) {
     console.log("IN WORK LOOP with block " + targetState.fields[1])
     const results = await miner.pollResults(targetState, wasSubmitRejected)
-    
+
     if (results.length === 0) {
         await delay(DELAY)
     } else {
         try {
+            console.log(`Submitting ${results.length} results.`)
             const submissionResponse = await submitWork(poolUrl, address, results)
             if (submissionResponse.working_block) {
                 const newTargetState = blockToTargetState(submissionResponse.working_block, submissionResponse.nonce)
@@ -119,21 +120,20 @@ async function submitWork(poolUrl: string, address: string, work: MiningSubmissi
             ['Content-Type']: 'application/json'
         }
     })
-
+    
     if (submitResult.status != 200) {
         const submissionResponse: SubmissionResponse = await submitResult.json()
         console.log("Server was unable to submit work: " + JSON.stringify(submissionResponse))
         throw Error("Server was unable to submit work.")
+    } else {
+        const submissionResponse: SubmissionResponse = await submitResult.json()
+        const rejectedResultCount = work.length - submissionResponse.num_accepted
+        if (rejectedResultCount > 0) {
+            console.warn(`Pool rejected ${rejectedResultCount} results. Check your miner output.`)
+        }
+    
+        return submissionResponse
     }
-
-    const submissionResponse: SubmissionResponse = await submitResult.json()
-        
-    const rejectedResultCount = work.length - submissionResponse.num_accepted
-    if (rejectedResultCount > 0) {
-        console.warn(`Pool rejected ${rejectedResultCount} results. Check your miner output.`)
-    }
-
-    return submissionResponse
 }
 
 async function getWork(poolUrl: string): Promise<Work | undefined> {
