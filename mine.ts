@@ -2,6 +2,7 @@ import {
     Constr,
     Lucid, 
     Network, 
+    fromHex, 
     fromText, 
     toHex,
 } from "https://deno.land/x/lucid@0.10.1/mod.ts"
@@ -51,14 +52,16 @@ type MiningSession = {
     current_block: Block
 }
 
+type Work = {
+    nonce: string
+    current_block: Block
+}
+
 export type TargetState = Constr<string | bigint | string[]>
 
-function blockToTargetState(block: Block): TargetState {
-    const nonce = new Uint8Array(16);
-    crypto.getRandomValues(nonce);
-
+function blockToTargetState(block: Block, poolNonce: string): TargetState {
     return new Constr(0, [
-        toHex(nonce),
+        poolNonce,
         BigInt(block.block_number),
         block.current_hash,
         BigInt(block.leading_zeroes),
@@ -98,23 +101,24 @@ function selectMinerFromEnvironment(): Miner {
 }
 
 export async function mine(poolUrl: string) {
-    Deno.addSignalListener("SIGINT", async () => {
-        await leavePool(poolUrl);
-        console.log("Successfully ended session with pool. Goodbye!");
-        Deno.exit();
-    });
+    const address = await lucid.wallet.address()
 
-    const session = await joinPool(poolUrl)
+    const maybeWork = await getWork(poolUrl)
+    if (!maybeWork) {
+        throw Error("Can't start main loop, no initial work!");
+    }
+    const { nonce, current_block } = maybeWork
+
     const miner = selectMinerFromEnvironment()
-    let targetState = blockToTargetState(session.current_block)
+    let targetState = blockToTargetState(current_block, nonce)
     let wasSubmissionRejected = false
-
+    
     while (true) {
         const results = await miner.pollResults(targetState, wasSubmissionRejected)
         wasSubmissionRejected = false
-        
+
         const submission: MiningSubmission = {
-            address: session.address,
+            address: address,
             entries: results,
         }
 
@@ -141,7 +145,7 @@ export async function mine(poolUrl: string) {
         if (submissionResponse.working_block) {
             if (submissionResponse.working_block.block_number != targetState.fields[1] as unknown as number) {
                 console.log(`Pool provided new block ${submissionResponse.working_block.block_number}.`)
-                targetState = blockToTargetState(submissionResponse.working_block)
+                targetState = blockToTargetState(submissionResponse.working_block, nonce)
                 // no point waiting, we got a new block!
             } else {
                 await delay(5000)
@@ -153,61 +157,19 @@ export async function mine(poolUrl: string) {
     
 }
 
-async function joinPool(poolUrl: string): Promise<MiningSession> {
+async function getWork(poolUrl: string): Promise<Work | undefined> {
     const address = await lucid.wallet.address()
-    const payload = "eventually this message will be a date/time that gets validated"
-    const payloadHex = fromText(payload)
-    const signed = await lucid.wallet.signMessage(address, payloadHex)
-    const registration: Registration = {
-        address,
-        payload,
-        ...signed
-    }
-
-    const joinPoolResponse = await fetch(`${poolUrl}/register`, {
-        method: 'POST',
-        body: JSON.stringify(registration),
+    const workResponse = await fetch(`${poolUrl}/work?address=${address}`, {
+        method: 'GET',
         headers: {
             ['Content-Type']: 'application/json'
         }
     })
 
-    if (joinPoolResponse.status == 400) {
-        const response = await joinPoolResponse.json() as GenericServerMessage
-        if (response.message.match(/session already exists/)) {
-            await leavePool(poolUrl)
-            return joinPool(poolUrl)
-        } else {
-            throw Error(`Could not join pool. Server sent message |${response.message}|.`)
-        }
+    if (workResponse.status != 200) {
+        console.debug(workResponse)
+        console.log("Couldn't get any work!")
     } else {
-        const miningSession: MiningSession = await joinPoolResponse.json()
-        console.log(`Successfully registered new mining session ${miningSession.session_id}. Mining begins at block ${miningSession.current_block.block_number}.`)
-        return miningSession
-    }
-}
-
-async function leavePool(poolUrl: string): Promise<void> {
-    const address = await lucid.wallet.address()
-    const payload = "eventually this message will be a date/time that gets validated"
-    const payloadHex = fromText(payload)
-    const signed = await lucid.wallet.signMessage(address, payloadHex)
-    const registration: Registration = {
-        address,
-        payload,
-        ...signed
-    }
-
-    const leavePoolResponse = await fetch(`${poolUrl}/deregister`, {
-        method: 'POST',
-        body: JSON.stringify(registration),
-        headers: {
-            ['Content-Type']: 'application/json'
-        }
-    })
-
-    if (leavePoolResponse.status == 400) {
-        const response = await leavePoolResponse.json() as GenericServerMessage
-        throw Error(`Could not leave pool. Server sent message |${response.message}|`)
+        return await workResponse.json() as Work
     }
 }

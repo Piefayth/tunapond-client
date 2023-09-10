@@ -27,7 +27,7 @@ export class PieCUDAMiner extends Miner {
                     this.p.kill()
                 } catch {}
             }
-
+            console.log(targetState)
             const hexTargetState = Data.to(targetState)
             const appropriatePortionOfTargetState = hexTargetState.slice(40)
             const args = [appropriatePortionOfTargetState, `${targetState.fields[0]}`, `${targetState.fields[3]}`, "8"]
