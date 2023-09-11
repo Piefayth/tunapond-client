@@ -6,6 +6,7 @@ import {
 import { PieCUDAMiner } from "./miners/piecuda.ts"
 import { Miner } from "./miner.ts";
 import { delay } from "./util.ts";
+import { loadSync } from "https://deno.land/std@0.199.0/dotenv/mod.ts";
 
 export type MiningSubmissionEntry = {
     sha: string,
@@ -52,8 +53,11 @@ function blockToTargetState(block: Block, poolNonce: string): TargetState {
     ])
 }
 
+loadSync({ export: true })
+
 const cardanoNetwork = Deno.env.get("NETWORK") as Network || "Mainnet" 
 const lucid = await Lucid.new(undefined, cardanoNetwork)
+
 lucid.selectWalletFromSeed(Deno.readTextFileSync("seed.txt"))
 
 const miners = [
@@ -161,6 +165,8 @@ export async function mine(poolUrl: string) {
     if (!maybeWork) {
         throw Error("Can't start main loop, no initial work!");
     }
+
+    console.log(`Began mining at ${Date.now() / 1000}`)
     const { nonce, current_block } = maybeWork
 
     const miner = selectMinerFromEnvironment()

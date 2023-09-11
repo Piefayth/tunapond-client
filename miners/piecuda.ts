@@ -39,8 +39,7 @@ export class PieCUDAMiner extends Miner {
         const solutions = await Promise.race([
             this.readProcessResults(),
             delay(this.READ_TIMEOUT)
-        ]) as MiningSubmissionEntry[]
-
+        ]) as MiningSubmissionEntry[] || []
 
         this.storedSolutions = [...this.storedSolutions, ...solutions]
 
