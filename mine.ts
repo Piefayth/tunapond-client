@@ -83,9 +83,12 @@ function selectMinerFromEnvironment(): Miner {
 }
 
 const DELAY = 2000
+
 async function doWork(poolUrl: string, miner: Miner, address: string, targetState: TargetState) {
     console.log("IN WORK LOOP with block " + targetState.fields[1])
+
     const results = await miner.pollResults(targetState)
+    
 
     if (results.length === 0) {
         await delay(DELAY)

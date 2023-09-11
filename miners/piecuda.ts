@@ -2,7 +2,6 @@
     return this.toString();
   };
   
-  
 
 import { Data } from "https://deno.land/x/lucid@0.10.1/mod.ts";
 import { MiningSubmissionEntry, TargetState } from "../mine.ts"
@@ -19,6 +18,7 @@ export class PieCUDAMiner extends Miner {
     oldTargetState: TargetState | undefined = undefined
     stringBuffer = ""
     storedSolutions: MiningSubmissionEntry[] = []
+    lastNewTargetStateTime = Date.now()
 
     constructor(exePath: string) {
         super()
@@ -26,13 +26,21 @@ export class PieCUDAMiner extends Miner {
         this.exePath = exePath
     }
     
+    
     async pollResults(targetState: TargetState): Promise<MiningSubmissionEntry[]> {
+        const ONE_MINUTE = 1000 * 60
         const didStateChange = (this.oldTargetState?.fields[1] || 0) != targetState.fields[1]
+        
+        let restart = false
+        if (Date.now() > this.lastNewTargetStateTime + ONE_MINUTE) {
+            this.lastNewTargetStateTime = Date.now()
+            restart = true
+        }
 
-        if (didStateChange || !this.p) {
+        if (didStateChange || !this.p || restart) {
             this.killExistingChild()
             this.startProcess(targetState)
-
+            this.lastNewTargetStateTime = Date.now()
             this.oldTargetState = targetState
         }
 
