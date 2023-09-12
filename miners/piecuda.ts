@@ -51,9 +51,9 @@ export class PieCUDAMiner extends Miner {
 
         this.storedSolutions = [...this.storedSolutions, ...solutions]
 
-        const status = await this.p?.status
+        //const status = await this.p?.status
         
-        if (this.storedSolutions.length >= SEND_BATCH_SIZE || (status?.success == true && this.storedSolutions.length > 0)) {
+        if (this.storedSolutions.length >= SEND_BATCH_SIZE) {
             const solutions = [...this.storedSolutions]
             this.storedSolutions = []
             return solutions
@@ -82,7 +82,12 @@ export class PieCUDAMiner extends Miner {
 
         const decoder = new TextDecoder()
         const reader = this.p.stdout.getReader()
-        const { value } = await reader.read()
+        const { done, value } = await reader.read()
+
+        if (done) {
+            return []
+        }
+
         const solutions: MiningSubmissionEntry[] = []
 
         this.stringBuffer += decoder.decode(value || new Uint8Array())
