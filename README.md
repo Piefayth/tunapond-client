@@ -10,6 +10,9 @@ A pool-aware mining client for Fortuna.
 - Place your `seed.txt` at the root of this repo.
 - `deno run --allow-all main.ts mine`
 
+Pool operators can also use this repository to create pool wallets. For preview:
+    - `deno run --allow-all main.ts new_wallet -p` 
+
 Currently only one miner is supported! If you want to use the `PIECUDA` miner, you must compile the exe from [this repo](https://github.com/Piefayth/SHA256CUDA) and point to it with the env var `PIECUDA_EXEPATH`.
 
 ## Adding a Miner
