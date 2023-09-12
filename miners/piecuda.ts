@@ -63,7 +63,6 @@ export class PieCUDAMiner extends Miner {
     }
 
     startProcess(targetState: TargetState) {
-        console.log("Starting process")
         const hexTargetState = Data.to(targetState)
         const appropriatePortionOfTargetState = hexTargetState.slice(40)
         const args = [appropriatePortionOfTargetState, `${targetState.fields[0]}`, `${targetState.fields[3]}`, "8"]

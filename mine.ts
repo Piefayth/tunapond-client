@@ -38,6 +38,7 @@ type Block = {
 type Work = {
     nonce: string
     current_block: Block
+    miner_id: number
 }
 
 export type TargetState = Constr<string | bigint | string[]>
@@ -83,22 +84,25 @@ function selectMinerFromEnvironment(): Miner {
 }
 
 const DELAY = 2000
-
-async function doWork(poolUrl: string, miner: Miner, address: string, targetState: TargetState) {
-    console.log("IN WORK LOOP with block " + targetState.fields[1])
-
+async function doWork(
+    poolUrl: string, 
+    miner: Miner, 
+    address: string, 
+    targetState: TargetState, 
+    minerID: number,
+) {
+    log(`Working on block ${targetState.fields[1]}`)
     const results = await miner.pollResults(targetState)
-    
 
     if (results.length === 0) {
         await delay(DELAY)
     } else {
         try {
-            console.log(`Submitting ${results.length} results.`)
+            log(`Submitting ${results.length} results.`)
             const submissionResponse = await submitWork(poolUrl, address, results)
             if (submissionResponse.working_block) {
                 const newTargetState = blockToTargetState(submissionResponse.working_block, submissionResponse.nonce)
-                return doWork(poolUrl, miner, address, newTargetState)
+                return doWork(poolUrl, miner, address, newTargetState, minerID)
             }
         } catch (e) {
             await delay(DELAY)
@@ -111,7 +115,7 @@ async function doWork(poolUrl: string, miner: Miner, address: string, targetStat
     }
 
     const newTargetState = blockToTargetState(newWork.current_block, newWork.nonce)
-    return doWork(poolUrl, miner, address, newTargetState)
+    return doWork(poolUrl, miner, address, newTargetState, minerID)
 }
 
 async function submitWork(poolUrl: string, address: string, work: MiningSubmissionEntry[]): Promise<SubmissionResponse> {
@@ -130,7 +134,7 @@ async function submitWork(poolUrl: string, address: string, work: MiningSubmissi
     
     if (submitResult.status != 200) {
         const submissionResponse: SubmissionResponse = await submitResult.json()
-        console.log("Server was unable to submit work: " + JSON.stringify(submissionResponse))
+        log("Server was unable to submit work: " + JSON.stringify(submissionResponse))
         throw Error("Server was unable to submit work.")
     } else {
         const submissionResponse: SubmissionResponse = await submitResult.json()
@@ -161,6 +165,15 @@ async function getWork(poolUrl: string): Promise<Work | undefined> {
     }
 }
 
+interface HashrateResponse {
+    estimated_hash_rate: number
+}
+async function displayHashrate(poolUrl: string, minerID: number, startTime: number) {
+    const hashrateResult = await fetch(`${poolUrl}/hashrate?miner_id=${minerID}&start_time=${startTime}`)
+    const hashrateJson: HashrateResponse = await hashrateResult.json() 
+    log(`Pool session hashrate: ${Math.trunc(hashrateJson.estimated_hash_rate)}/s.`)
+}
+
 export async function mine(poolUrl: string) {
     const address = await lucid.wallet.address()
 
@@ -169,11 +182,22 @@ export async function mine(poolUrl: string) {
         throw Error("Can't start main loop, no initial work!");
     }
 
-    console.log(`Began mining at ${Date.now() / 1000}`)
+    const startTime = Math.floor(Date.now() / 1000)
+    log(`Began mining at ${startTime} for miner ID ${maybeWork.miner_id}`)
     const { nonce, current_block } = maybeWork
 
     const miner = selectMinerFromEnvironment()
     const targetState = blockToTargetState(current_block, nonce)
 
-    await doWork(poolUrl, miner, address, targetState)
+
+    setInterval(() => {
+        displayHashrate(poolUrl, maybeWork.miner_id, startTime)
+    }, 15_000)
+    
+    await doWork(poolUrl, miner, address, targetState, maybeWork.miner_id)
+}
+
+function log(...args: any[]): void {
+    const timestamp = new Date().toLocaleString().split(", ")[1];
+    console.log(`[${timestamp}]`, ...args);
 }
