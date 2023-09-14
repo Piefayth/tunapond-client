@@ -108,13 +108,20 @@ async function doWork(
         }
     }
 
-    const newWork = await getWork(poolUrl)
-    if (!newWork) {
-        throw Error("Could not get new work from submission response or work endpoint. Is the pool down? Are you connected to the internet?");
+    try {
+        const newWork = await getWork(poolUrl)
+        if (!newWork) {
+            throw Error("Could not get new work from submission response or work endpoint. Is the pool down? Are you connected to the internet?");
+        }
+        const newTargetState = blockToTargetState(newWork.current_block, newWork.nonce)
+        return doWork(poolUrl, miner, address, newTargetState, minerID)
+    } catch {
+        console.warn("Warning: Failed to get new work. Continuing to mine previous block.")
+        return doWork(poolUrl, miner, address, targetState, minerID)
     }
 
-    const newTargetState = blockToTargetState(newWork.current_block, newWork.nonce)
-    return doWork(poolUrl, miner, address, newTargetState, minerID)
+
+
 }
 
 async function submitWork(poolUrl: string, address: string, work: MiningSubmissionEntry[]): Promise<SubmissionResponse> {
