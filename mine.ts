@@ -63,8 +63,6 @@ const miners = [
 ]
 
 function selectMinerFromEnvironment(): Miner {
-    lucid.selectWalletFromSeed(Deno.readTextFileSync("seed.txt"))
-    
     const miner = Deno.env.get("MINER")
     if (!miner) {
         throw Error(`The environment variable MINER must be set. Options are ${miners.join(",")}`)
@@ -181,6 +179,7 @@ async function displayHashrate(poolUrl: string, minerID: number, startTime: numb
 }
 
 export async function mine(poolUrl: string) {
+    lucid.selectWalletFromSeed(Deno.readTextFileSync("seed.txt"))
     const address = await lucid.wallet.address()
 
     const maybeWork = await getWork(poolUrl)
