@@ -58,13 +58,13 @@ loadSync({ export: true })
 const cardanoNetwork = Deno.env.get("NETWORK") as Network || "Mainnet" 
 const lucid = await Lucid.new(undefined, cardanoNetwork)
 
-lucid.selectWalletFromSeed(Deno.readTextFileSync("seed.txt"))
-
 const miners = [
     "PIECUDA"
 ]
 
 function selectMinerFromEnvironment(): Miner {
+    lucid.selectWalletFromSeed(Deno.readTextFileSync("seed.txt"))
+    
     const miner = Deno.env.get("MINER")
     if (!miner) {
         throw Error(`The environment variable MINER must be set. Options are ${miners.join(",")}`)
