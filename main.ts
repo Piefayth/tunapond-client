@@ -1,7 +1,8 @@
 import { loadSync } from "https://deno.land/std@0.199.0/dotenv/mod.ts";
 import { Command } from "https://deno.land/x/cliffy@v1.0.0-rc.3/command/mod.ts";
 import { mine } from "./mine.ts";
-import { minerWallet, poolWallet } from "./wallet.ts";
+import { minerWallet, poolRegister, poolWallet, redeem } from "./wallet.ts";
+import { number } from "https://deno.land/x/cliffy@v1.0.0-rc.3/flags/types/number.ts";
 
 if (!import.meta.main) {
   console.error("main.ts is not a module")
@@ -24,11 +25,27 @@ const poolWalletCommand = new Command()
     poolWallet(preview)
   })
 
+const registerPoolCommand = new Command()
+  .description("Register a new pool.")
+  .option("-p, --preview", "Use testnet")
+  .action(({ preview }) => {
+    poolRegister(preview)
+  })
+
 const minerWalletCommand = new Command()
   .description("Create a new miner wallet.")
   .option("-p, --preview", "Use testnet")
   .action(({ preview }) => {
     minerWallet(preview)
+  })
+
+const redeemCommand = new Command()
+  .description("Redeem tuna from a mining pool.")
+  .option("-t, --transaction <transaction>", "The transaction hash of the utxo to redeem")
+  .option("-i, --index <index>", "The index of the utxo to redeem")
+  .option("-p, --preview", "Use testnet")
+  .action(({ transaction, index, preview }) => {
+    redeem(transaction!, Number(index), preview || false )
   })
 
 await new Command()
@@ -37,5 +54,7 @@ await new Command()
   .version("0.0.1")
   .command("mine", mineCommand)
   .command("pool_wallet", poolWalletCommand)
+  .command("register_pool_this_costs_20_ADA", registerPoolCommand)
   .command("mining_wallet", minerWalletCommand)
+  .command("redeem", redeemCommand)
   .parse(Deno.args);
