@@ -94,8 +94,8 @@ export class PieCUDAMiner extends Miner {
         
         const lines = this.stringBuffer.split('\n')
         for (let i = 0; i < lines.length - 1; i++) {
-            const [sha, nonce] = lines[i].split('|').map(s => s.trim())
-            solutions.push({ sha, nonce })
+            const [_, nonce] = lines[i].split('|').map(s => s.trim())
+            solutions.push({ nonce })
         }
         
         this.stringBuffer = lines[lines.length - 1]

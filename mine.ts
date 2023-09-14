@@ -9,7 +9,6 @@ import { delay } from "./util.ts";
 import { loadSync } from "https://deno.land/std@0.199.0/dotenv/mod.ts";
 
 export type MiningSubmissionEntry = {
-    sha: string,
     nonce: string
 }
 
