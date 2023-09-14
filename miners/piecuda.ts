@@ -80,27 +80,34 @@ export class PieCUDAMiner extends Miner {
             return []
         }
 
-        const decoder = new TextDecoder()
-        const reader = this.p.stdout.getReader()
-        const { done, value } = await reader.read()
-
-        if (done) {
-            return []
-        }
-
         const solutions: MiningSubmissionEntry[] = []
 
-        this.stringBuffer += decoder.decode(value || new Uint8Array())
-        
-        const lines = this.stringBuffer.split('\n')
-        for (let i = 0; i < lines.length - 1; i++) {
-            const [_, nonce] = lines[i].split('|').map(s => s.trim())
-            solutions.push({ nonce })
+        try {
+            const decoder = new TextDecoder()
+            const reader = this.p.stdout.getReader()
+            const { done, value } = await reader.read()
+    
+            if (done) {
+                return []
+            }
+    
+    
+    
+            this.stringBuffer += decoder.decode(value || new Uint8Array())
+            
+            const lines = this.stringBuffer.split('\n')
+            for (let i = 0; i < lines.length - 1; i++) {
+                const [_, nonce] = lines[i].split('|').map(s => s.trim())
+                solutions.push({ nonce })
+            }
+            
+            this.stringBuffer = lines[lines.length - 1]
+    
+            reader.releaseLock()
+        } catch (e) {
+            console.warn("probably some lock related failure of submission")
         }
-        
-        this.stringBuffer = lines[lines.length - 1]
 
-        reader.releaseLock()
         
         return solutions
     }
