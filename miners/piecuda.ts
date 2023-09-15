@@ -19,11 +19,14 @@ export class PieCUDAMiner extends Miner {
     stringBuffer = ""
     storedSolutions: MiningSubmissionEntry[] = []
     lastNewTargetStateTime = Date.now()
+    newBlockFound = false
+    isPreview: boolean
 
-    constructor(exePath: string) {
+    constructor(exePath: string, isPreview: boolean) {
         super()
 
         this.exePath = exePath
+        this.isPreview = isPreview
     }
     
     
@@ -53,7 +56,7 @@ export class PieCUDAMiner extends Miner {
 
         //const status = await this.p?.status
         
-        if (this.storedSolutions.length >= SEND_BATCH_SIZE) {
+        if (this.newBlockFound || this.storedSolutions.length >= SEND_BATCH_SIZE) {
             const solutions = [...this.storedSolutions]
             this.storedSolutions = []
             return solutions
@@ -91,13 +94,17 @@ export class PieCUDAMiner extends Miner {
                 return []
             }
     
-    
-    
             this.stringBuffer += decoder.decode(value || new Uint8Array())
             
             const lines = this.stringBuffer.split('\n')
+            const currentZeroes = this.oldTargetState?.fields[3] as bigint || 32n
+
             for (let i = 0; i < lines.length - 1; i++) {
-                const [_, nonce] = lines[i].split('|').map(s => s.trim())
+                const [sha, nonce] = lines[i].split('|').map(s => s.trim())
+                if (!this.isPreview && numZeroes(sha) >= currentZeroes) {   // Disable the early-exit in preview because of the low difficulty.
+                    this.newBlockFound = true
+                    console.log(`Found a new block ${sha} | ${nonce}.`)
+                }
                 solutions.push({ nonce })
             }
             
@@ -121,3 +128,15 @@ export class PieCUDAMiner extends Miner {
     }
 }
 
+
+function numZeroes(zeroes: string): number {
+    let count = 0;
+    for (let char of zeroes) {
+        if (char === '0') {
+            count++;
+        } else {
+            break;
+        }
+    }
+    return count;
+}

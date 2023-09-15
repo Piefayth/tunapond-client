@@ -74,7 +74,7 @@ function selectMinerFromEnvironment(): Miner {
             throw Error(`To use the PIECUDA miner, the environment variable PIECUDA_EXEPATH must be set.`)
         }
 
-        return new PieCUDAMiner(exePath)
+        return new PieCUDAMiner(exePath, cardanoNetwork === "Preview")
     } else {
         throw Error(`Unsupported miner ${miner} selected.`)
     }

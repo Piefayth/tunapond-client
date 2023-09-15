@@ -17,9 +17,8 @@ Miners can use this repository to create a new mining wallet. For preview:
     
 Miners can use this repository to redeem from the pool. For preview:
 
-- `deno run --allow-all main.ts redeem -p --transaction <tx_hash> --index <output_index>`
-- It is a little tricky to find your transaction right now - have to look through all the datums on the contract to find the one with your VKH.
-- Contributions welcome.
+- `deno run --allow-all main.ts redeem -p
+- Redeems tuna from the account matching your `seed.txt` address.
 
 Pool operators can also use this repository to create pool wallets. For preview:
 

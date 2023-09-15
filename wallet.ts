@@ -6,7 +6,7 @@ loadSync({export: true})
 
 // TODO: Let users redeem without having to have ogmios and kupo
 // Hosted service or something
-export async function redeem(redeemTxHash: string, redeemIndex: number, isPreview: boolean) {
+export async function redeem(isPreview: boolean) {
     const seed = Deno.readTextFileSync("seed.txt")
     const network = isPreview ? "Preview" : "Mainnet"
 
@@ -18,6 +18,11 @@ export async function redeem(redeemTxHash: string, redeemIndex: number, isPrevie
     const POOL_SCRIPT_HASH = Deno.env.get("POOL_SCRIPT_HASH");
     if (!POOL_SCRIPT_HASH) {
         throw Error("Cannot redeem from a pool without a POOL_SCRIPT_HASH. Please point POOL_CONTRACT_ADDRESS to a valid UTxO.")
+    }
+
+    const POOL_CONTRACT_ADDRESS = Deno.env.get("POOL_CONTRACT_ADDRESS");
+    if (!POOL_CONTRACT_ADDRESS) {
+        throw Error("Cannot redeem from a pool without a POOL_CONTRACT_ADDRESS. Please point POOL_CONTRACT_ADDRESS to a valid address.")
     }
 
     const OGMIOS_URL = Deno.env.get("OGMIOS_URL")
@@ -37,29 +42,55 @@ export async function redeem(redeemTxHash: string, redeemIndex: number, isPrevie
     const utxoWithPoolToken = await lucid.utxoByUnit(POOL_SCRIPT_HASH)
     const poolOwnerAddress = utxoWithPoolToken.address
 
+    const poolUtxos = await lucid.utxosAt(POOL_CONTRACT_ADDRESS)
+
+    if (lucid.utils.getAddressDetails(POOL_CONTRACT_ADDRESS).paymentCredential?.type != 'Script'){
+        throw Error("POOL CONTRACT ADDRESS was not a Script address.")
+    }
+
+    const vkh = lucid.utils.getAddressDetails((await lucid.wallet.address())).paymentCredential?.hash
+    if (!vkh) {
+        throw Error("Wallet found in seed.txt was, against all odds, missing a payment credential.")
+    }
+
+    let accountUtxo
+    for (const utxo of poolUtxos) {
+        try {
+            const datum = await lucid.datumOf(utxo)
+            const datumVkh = (datum.valueOf() as any)?.fields?.[0]
+            if (!vkh) {
+                // not an account datum
+                continue
+            }
+
+            if (vkh === datumVkh) {
+                accountUtxo = utxo
+            }
+        } catch(e){}
+    }
+
+    if (!accountUtxo) {
+        throw Error("Couldn't find a matching account for your wallet address.")
+    }
+
     const [scriptTxHash, scriptOutputIndex] = POOL_OUTPUT_REFERENCE.split("#")
     const scriptReference = await lucid.utxosByOutRef([{
         txHash: scriptTxHash,
         outputIndex: Number(scriptOutputIndex)
     }])
-    
-    const redeemUtxo = await lucid.utxosByOutRef([{
-        txHash: redeemTxHash,
-        outputIndex: redeemIndex
-    }])
-
 
     const tx = await lucid.newTx()
-        .collectFrom(redeemUtxo, Data.to(new Constr(1, [new Constr(1, [])])))
+        .collectFrom([accountUtxo], Data.to(new Constr(1, [new Constr(1, [])])))
         .readFrom([utxoWithPoolToken])
         .readFrom(scriptReference)
         .addSigner((await lucid.wallet.address()))
         .payToAddress(poolOwnerAddress, { lovelace: 2_000_000n })
         .complete()
-        
+
     const signed = await tx.sign().complete()
     const submit = await signed.submit()
-    console.log("Redemption submitted, tx hash: " + submit)
+    const tuna = Object.entries(accountUtxo.assets).find(([name, _]) => { return name != 'lovelace' })?.[1]
+    console.log(`Redemption for ${tuna} $TUNA submitted. Tx: ${submit}`)
 }
 
 export async function minerWallet(isPreview = false) {

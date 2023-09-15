@@ -41,11 +41,9 @@ const minerWalletCommand = new Command()
 
 const redeemCommand = new Command()
   .description("Redeem tuna from a mining pool.")
-  .option("-t, --transaction <transaction>", "The transaction hash of the utxo to redeem")
-  .option("-i, --index <index>", "The index of the utxo to redeem")
   .option("-p, --preview", "Use testnet")
-  .action(({ transaction, index, preview }) => {
-    redeem(transaction!, Number(index), preview || false )
+  .action(({ preview }) => {
+    redeem(preview || false )
   })
 
 await new Command()
