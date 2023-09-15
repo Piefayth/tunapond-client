@@ -173,9 +173,13 @@ interface HashrateResponse {
     estimated_hash_rate: number
 }
 async function displayHashrate(poolUrl: string, minerID: number, startTime: number) {
-    const hashrateResult = await fetch(`${poolUrl}/hashrate?miner_id=${minerID}&start_time=${startTime}`)
-    const hashrateJson: HashrateResponse = await hashrateResult.json() 
-    log(`Pool session hashrate: ${Math.trunc(hashrateJson.estimated_hash_rate)}/s.`)
+    const currentTimeInSeconds = Math.floor(Date.now() / 1000);
+    const fiveMinutesAgo = currentTimeInSeconds - 300;
+    const effectiveStartTime = startTime < fiveMinutesAgo ? fiveMinutesAgo : startTime;
+
+    const hashrateResult = await fetch(`${poolUrl}/hashrate?miner_id=${minerID}&start_time=${effectiveStartTime}`);
+    const hashrateJson: HashrateResponse = await hashrateResult.json();
+    log(`Last 5 minute hashrate: ${Math.trunc(hashrateJson.estimated_hash_rate)}/s.`);
 }
 
 export async function mine(poolUrl: string) {
