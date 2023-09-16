@@ -176,10 +176,14 @@ async function displayHashrate(poolUrl: string, minerID: number, startTime: numb
     const currentTimeInSeconds = Math.floor(Date.now() / 1000);
     const fiveMinutesAgo = currentTimeInSeconds - 300;
     const effectiveStartTime = startTime < fiveMinutesAgo ? fiveMinutesAgo : startTime;
+    try {
+        const hashrateResult = await fetch(`${poolUrl}/hashrate?miner_id=${minerID}&start_time=${effectiveStartTime}`);
+        const hashrateJson: HashrateResponse = await hashrateResult.json();
+        log(`Last 5 minute hashrate: ${Math.trunc(hashrateJson.estimated_hash_rate)}/s.`);
+    } catch (e) {
+        log(`Can't get hashrate while server is unavailable.`)
+    }
 
-    const hashrateResult = await fetch(`${poolUrl}/hashrate?miner_id=${minerID}&start_time=${effectiveStartTime}`);
-    const hashrateJson: HashrateResponse = await hashrateResult.json();
-    log(`Last 5 minute hashrate: ${Math.trunc(hashrateJson.estimated_hash_rate)}/s.`);
 }
 
 export async function mine(poolUrl: string) {
