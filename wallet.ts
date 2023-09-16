@@ -4,6 +4,12 @@ import { C, Constr, Data, Kupmios, Lucid, MintingPolicy, Script, applyDoubleCbor
 
 loadSync({export: true})
 
+const BankSchema = Data.Object({
+    owners: Data.Map(Data.Bytes(), Data.Integer())
+})
+type BankData = Data.Static<typeof BankSchema>
+const BankData = BankSchema as unknown as BankData
+
 // TODO: Let users redeem without having to have ogmios and kupo
 // Hosted service or something
 export async function redeem(isPreview: boolean) {
@@ -25,6 +31,11 @@ export async function redeem(isPreview: boolean) {
         throw Error("Cannot redeem from a pool without a POOL_CONTRACT_ADDRESS. Please point POOL_CONTRACT_ADDRESS to a valid address.")
     }
 
+    const TUNA_VALIDATOR_HASH = Deno.env.get("TUNA_VALIDATOR_HASH")
+    if (!TUNA_VALIDATOR_HASH) {
+        throw Error("Cannot redeem from a pool without a TUNA_VALIDATOR_HASH. Please point POOL_CONTRACT_ADDRESS to a valid address.")
+    }
+
     const OGMIOS_URL = Deno.env.get("OGMIOS_URL")
     if (!OGMIOS_URL) {
         throw Error("Cannot register a pool without a specified OGMIOS_URL.")
@@ -38,11 +49,11 @@ export async function redeem(isPreview: boolean) {
     const lucid = await Lucid.new(new Kupmios(KUPO_URL, OGMIOS_URL), network)
     lucid.selectWalletFromSeed(seed)
 
-
-    const utxoWithPoolToken = await lucid.utxoByUnit(POOL_SCRIPT_HASH)
+    const poolBankToken = `${POOL_SCRIPT_HASH}${fromText("BANK")}`
+    const utxoWithPoolToken = await lucid.utxoByUnit(POOL_SCRIPT_HASH + fromText("POOL"))
     const poolOwnerAddress = utxoWithPoolToken.address
-
-    const poolUtxos = await lucid.utxosAt(POOL_CONTRACT_ADDRESS)
+    const tunaAssetName =  TUNA_VALIDATOR_HASH + fromText("TUNA")
+    const poolContractUtxos = await lucid.utxosAt(POOL_CONTRACT_ADDRESS)
 
     if (lucid.utils.getAddressDetails(POOL_CONTRACT_ADDRESS).paymentCredential?.type != 'Script'){
         throw Error("POOL CONTRACT ADDRESS was not a Script address.")
@@ -53,25 +64,24 @@ export async function redeem(isPreview: boolean) {
         throw Error("Wallet found in seed.txt was, against all odds, missing a payment credential.")
     }
 
-    let accountUtxo
-    for (const utxo of poolUtxos) {
-        try {
-            const datum = await lucid.datumOf(utxo)
-            const datumVkh = (datum.valueOf() as any)?.fields?.[0]
-            if (!vkh) {
-                // not an account datum
-                continue
-            }
+    const bankUtxo = poolContractUtxos.find(utxo => {
+        return utxo.assets[poolBankToken]
+    })
 
-            if (vkh === datumVkh) {
-                accountUtxo = utxo
-            }
-        } catch(e){}
-    }
+    if (!bankUtxo) {
+        console.log("There is no BANK token at the POOL_CONTRACT_ADDRESS")
+        return new Response(JSON.stringify({
+          message: "There is no BANK token at the POOL_CONTRACT_ADDRESS"
+        }), { status: 500 })
+      }
 
-    if (!accountUtxo) {
-        throw Error("Couldn't find a matching account for your wallet address.")
-    }
+      
+    const bankData: BankData = await lucid.datumOf<BankData>(bankUtxo, BankData)
+    const originalBankedAmount = bankUtxo.assets[tunaAssetName]
+    const withdrawAmount = bankData.owners.get(vkh)
+    
+    bankData.owners.set(vkh, 0n)
+    const newBankedAmount = originalBankedAmount - withdrawAmount!
 
     const [scriptTxHash, scriptOutputIndex] = POOL_OUTPUT_REFERENCE.split("#")
     const scriptReference = await lucid.utxosByOutRef([{
@@ -80,17 +90,24 @@ export async function redeem(isPreview: boolean) {
     }])
 
     const tx = await lucid.newTx()
-        .collectFrom([accountUtxo], Data.to(new Constr(1, [new Constr(1, [])])))
+        .collectFrom([bankUtxo!], Data.to(new Constr(1, [new Constr(1, [])])))
         .readFrom([utxoWithPoolToken])
         .readFrom(scriptReference)
         .addSigner((await lucid.wallet.address()))
         .payToAddress(poolOwnerAddress, { lovelace: 2_000_000n })
+        .payToAddressWithData(
+            POOL_CONTRACT_ADDRESS,
+            { inline: Data.to(bankData, BankData) },
+            { 
+              [poolBankToken]: 1n,  // pay the bank the identifying NFT and the aggregate proper total of tuna
+              [tunaAssetName]: newBankedAmount
+            },
+          )
         .complete()
 
     const signed = await tx.sign().complete()
     const submit = await signed.submit()
-    const tuna = Object.entries(accountUtxo.assets).find(([name, _]) => { return name != 'lovelace' })?.[1]
-    console.log(`Redemption for ${tuna} $TUNA submitted. Tx: ${submit}`)
+    console.log(`Redemption for ${withdrawAmount} $TUNA submitted. Tx: ${submit}`)
 }
 
 export async function minerWallet(isPreview = false) {
@@ -111,7 +128,7 @@ export async function minerWallet(isPreview = false) {
     console.log(await lucid.wallet.address())
 }
 
-export function poolWallet(isPreview = false) {
+export async function poolWallet(isPreview = false) {
     try {
         const poolKeyRaw = Deno.readTextFileSync("poolKey.sk")
         console.log("Pool key already exists, not generating new key...")
@@ -193,6 +210,8 @@ export async function poolRegister(isPreview = false) {
     //     output_index: BigInt(registrationUtxo.outputIndex)
     // }
 
+
+
     const outputReference = new Constr(0, [
         new Constr(0, [registrationUtxo.txHash]),
         BigInt(registrationUtxo.outputIndex),
@@ -213,13 +232,22 @@ export async function poolRegister(isPreview = false) {
     const poolContractAddress = lucid.utils.validatorToAddress(parameterizedPoolMintingPolicy)
     const poolScriptHash = lucid.utils.validatorToScriptHash(parameterizedPoolMintingPolicy)
     const poolMasterTokenAssetName = `${poolScriptHash}${fromText("POOL")}`
+    const poolBankTokenAssetName = `${poolScriptHash}${fromText("BANK")}`
 
     // mint the nft from that validator back to the pool wallet
+    // mint the bank nft back to the contract wallet
+    const bank: BankData = {
+        owners: new Map()
+    }
+
+    bank.owners.set("ff", 0n)
+
     const tx = await lucid.newTx()
         .collectFrom([registrationUtxo])
         .attachMintingPolicy(parameterizedPoolMintingPolicy)
         .mintAssets({
-            [poolMasterTokenAssetName]: 1n
+            [poolMasterTokenAssetName]: 1n,
+            [poolBankTokenAssetName]: 1n
         }, Data.void())
         .payToContract(
             poolContractAddress,
@@ -227,6 +255,13 @@ export async function poolRegister(isPreview = false) {
                 scriptRef: parameterizedPoolMintingPolicy
             },
             {}
+        )
+        .payToContract(
+            poolContractAddress,
+            {   inline: Data.to(bank, BankData) },
+            {
+                [poolBankTokenAssetName]: 1n
+            }
         )
         .complete()
     const signed = await tx.sign().complete()
