@@ -8,7 +8,7 @@ A pool-aware mining client for Fortuna.
 - Set the `POOL_URL` and appropriate `MINER` variables.
     - Note: Only the `PIECUDA` miner is currently supported.
 - Place your `seed.txt` at the root of this repo. (or generate one with the instructions in the next section)
-    - TODO: This repo doesn't actually need your seed; it could just take an address.
+    - TODO: This repo doesn't actually need your seed to mine; it could just take an address.
 - `deno run --allow-all main.ts mine`
 
 Miners can use this repository to create a new mining wallet. For preview:

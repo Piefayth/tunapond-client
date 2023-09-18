@@ -37,7 +37,8 @@ type Block = {
 type Work = {
     nonce: string
     current_block: Block
-    miner_id: number
+    miner_id: number,
+    min_zeroes: number,
 }
 
 export type TargetState = Constr<string | bigint | string[]>
@@ -87,9 +88,10 @@ async function doWork(
     address: string, 
     targetState: TargetState, 
     minerID: number,
+    samplingZeroes: number
 ) {
-    log(`Working on block ${targetState.fields[1]}`)
-    const results = await miner.pollResults(targetState)
+    log(`Working on block ${targetState.fields[1]}.`)
+    const results = await miner.pollResults(targetState, samplingZeroes)
 
     if (results.length === 0) {
         await delay(DELAY)
@@ -99,7 +101,7 @@ async function doWork(
             const submissionResponse = await submitWork(poolUrl, address, results)
             if (submissionResponse.working_block) {
                 const newTargetState = blockToTargetState(submissionResponse.working_block, submissionResponse.nonce)
-                return doWork(poolUrl, miner, address, newTargetState, minerID)
+                return doWork(poolUrl, miner, address, newTargetState, minerID, samplingZeroes)
             }
         } catch (e) {
             await delay(DELAY)
@@ -112,10 +114,10 @@ async function doWork(
             throw Error("Could not get new work from submission response or work endpoint. Is the pool down? Are you connected to the internet?");
         }
         const newTargetState = blockToTargetState(newWork.current_block, newWork.nonce)
-        return doWork(poolUrl, miner, address, newTargetState, minerID)
+        return doWork(poolUrl, miner, address, newTargetState, minerID, samplingZeroes)
     } catch {
         console.warn("Warning: Failed to get new work. Continuing to mine previous block.")
-        return doWork(poolUrl, miner, address, targetState, minerID)
+        return doWork(poolUrl, miner, address, targetState, minerID, samplingZeroes)
     }
 
 
@@ -175,11 +177,12 @@ interface HashrateResponse {
 async function displayHashrate(poolUrl: string, minerID: number, startTime: number) {
     const currentTimeInSeconds = Math.floor(Date.now() / 1000);
     const fiveMinutesAgo = currentTimeInSeconds - 300;
-    const effectiveStartTime = startTime < fiveMinutesAgo ? fiveMinutesAgo : startTime;
+    const fifteenMinutesAgo = currentTimeInSeconds - 300 * 3
+    const effectiveStartTime = startTime < fifteenMinutesAgo ? fifteenMinutesAgo : startTime;
     try {
         const hashrateResult = await fetch(`${poolUrl}/hashrate?miner_id=${minerID}&start_time=${effectiveStartTime}`);
         const hashrateJson: HashrateResponse = await hashrateResult.json();
-        log(`Last 5 minute hashrate: ${Math.trunc(hashrateJson.estimated_hash_rate)}/s.`);
+        log(`Last 15 minute hashrate: ${Math.trunc(hashrateJson.estimated_hash_rate)}/s.`);
     } catch (e) {
         log(`Can't get hashrate while server is unavailable.`)
     }
@@ -196,8 +199,8 @@ export async function mine(poolUrl: string) {
     }
 
     const startTime = Math.floor(Date.now() / 1000)
-    log(`Began mining at ${startTime} for miner ID ${maybeWork.miner_id}`)
-    const { nonce, current_block } = maybeWork
+    const { nonce, miner_id, current_block, min_zeroes } = maybeWork
+    log(`Began mining at ${startTime} for miner ID ${miner_id}. Sampling difficulty is currently ${min_zeroes}.`)
 
     const miner = selectMinerFromEnvironment()
     const targetState = blockToTargetState(current_block, nonce)
@@ -205,12 +208,12 @@ export async function mine(poolUrl: string) {
 
     setInterval(() => {
         displayHashrate(poolUrl, maybeWork.miner_id, startTime)
-    }, 15_000)
+    }, 30_000)
     
-    await doWork(poolUrl, miner, address, targetState, maybeWork.miner_id)
+    await doWork(poolUrl, miner, address, targetState, maybeWork.miner_id, min_zeroes)
 }
 
-function log(...args: any[]): void {
+export function log(...args: any[]): void {
     const timestamp = new Date().toLocaleString().split(", ")[1];
     console.log(`[${timestamp}]`, ...args);
 }

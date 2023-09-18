@@ -4,7 +4,7 @@
   
 
 import { Data } from "https://deno.land/x/lucid@0.10.1/mod.ts";
-import { MiningSubmissionEntry, TargetState } from "../mine.ts"
+import { MiningSubmissionEntry, TargetState, log } from "../mine.ts"
 import { Miner } from "../miner.ts"
 import { delay } from "../util.ts";
 
@@ -30,7 +30,7 @@ export class PieCUDAMiner extends Miner {
     }
     
     
-    async pollResults(targetState: TargetState): Promise<MiningSubmissionEntry[]> {
+    async pollResults(targetState: TargetState, samplingZeroes: number): Promise<MiningSubmissionEntry[]> {
         const ONE_MINUTE = 1000 * 60
         const didStateChange = (this.oldTargetState?.fields[1] || 0) != targetState.fields[1]
         
@@ -42,7 +42,7 @@ export class PieCUDAMiner extends Miner {
 
         if (didStateChange || !this.p || restart) {
             this.killExistingChild()
-            this.startProcess(targetState)
+            this.startProcess(targetState, samplingZeroes)
             this.lastNewTargetStateTime = Date.now()
             this.oldTargetState = targetState
         }
@@ -65,10 +65,10 @@ export class PieCUDAMiner extends Miner {
         }
     }
 
-    startProcess(targetState: TargetState) {
+    startProcess(targetState: TargetState, samplingZeroes: number) {
         const hexTargetState = Data.to(targetState)
         const appropriatePortionOfTargetState = hexTargetState.slice(40)
-        const args = [appropriatePortionOfTargetState, `${targetState.fields[0]}`, `${targetState.fields[3]}`, "8"]
+        const args = [appropriatePortionOfTargetState, `${targetState.fields[0]}`, `${targetState.fields[3]}`, `${samplingZeroes}`]
 
         this.cmd = new Deno.Command(this.exePath, {
             stdout: 'piped',
@@ -88,6 +88,7 @@ export class PieCUDAMiner extends Miner {
         try {
             const decoder = new TextDecoder()
             const reader = this.p.stdout.getReader()
+
             const { done, value } = await reader.read()
     
             if (done) {
@@ -103,7 +104,7 @@ export class PieCUDAMiner extends Miner {
                 const [sha, nonce] = lines[i].split('|').map(s => s.trim())
                 if (!this.isPreview && numZeroes(sha) >= currentZeroes) {   // Disable the early-exit in preview because of the low difficulty.
                     this.newBlockFound = true
-                    console.log(`Found a new block ${sha} | ${nonce}.`)
+                    log(`Found a new block ${sha} | ${nonce}.`)
                 }
                 solutions.push({ nonce })
             }
@@ -112,7 +113,7 @@ export class PieCUDAMiner extends Miner {
     
             reader.releaseLock()
         } catch (e) {
-            console.warn("probably some lock related failure of submission")
+            log("No results to poll, continuing...")
         }
 
         

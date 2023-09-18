@@ -1,5 +1,4 @@
 import { loadSync } from "https://deno.land/std@0.199.0/dotenv/mod.ts";
-import { Datum } from "https://deno.land/x/lucid@0.10.1/src/core/libs/cardano_multiplatform_lib/cardano_multiplatform_lib.generated.js";
 import { C, Constr, Data, Kupmios, Lucid, MintingPolicy, Script, applyDoubleCborEncoding, applyParamsToScript, fromText, generatePrivateKey, generateSeedPhrase } from "https://deno.land/x/lucid@0.10.7/mod.ts";
 
 loadSync({export: true})
@@ -89,11 +88,13 @@ export async function redeem(isPreview: boolean) {
         outputIndex: Number(scriptOutputIndex)
     }])
 
+    const ownAddress = await lucid.wallet.address()
+
     const tx = await lucid.newTx()
-        .collectFrom([bankUtxo!], Data.to(new Constr(1, [new Constr(1, [])])))
+        .collectFrom([bankUtxo], Data.to(new Constr(1, [new Constr(1, [])])))
         .readFrom([utxoWithPoolToken])
         .readFrom(scriptReference)
-        .addSigner((await lucid.wallet.address()))
+        .addSigner(ownAddress)
         .payToAddress(poolOwnerAddress, { lovelace: 2_000_000n })
         .payToAddressWithData(
             POOL_CONTRACT_ADDRESS,
@@ -103,8 +104,14 @@ export async function redeem(isPreview: boolean) {
               [tunaAssetName]: newBankedAmount
             },
           )
-        .complete()
-
+        .payToAddress(
+            ownAddress,
+            {
+                [tunaAssetName]: withdrawAmount!
+            }
+        )
+        .complete();
+    
     const signed = await tx.sign().complete()
     const submit = await signed.submit()
     console.log(`Redemption for ${withdrawAmount} $TUNA submitted. Tx: ${submit}`)
@@ -120,11 +127,11 @@ export async function minerWallet(isPreview = false) {
     } catch (e) {
         seed = generateSeedPhrase();
         Deno.writeTextFileSync("seed.txt", seed);
+        console.log(`Miner wallet initialized and saved to seed.txt`)
     }
 
     const lucid = await Lucid.new(undefined, network)
     lucid.selectWalletFromSeed(seed)
-    console.log(`Miner wallet initialized and saved to seed.txt`)
     console.log(await lucid.wallet.address())
 }
 

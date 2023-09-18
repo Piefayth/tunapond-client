@@ -3,6 +3,7 @@ import { Command } from "https://deno.land/x/cliffy@v1.0.0-rc.3/command/mod.ts";
 import { mine } from "./mine.ts";
 import { minerWallet, poolRegister, poolWallet, redeem } from "./wallet.ts";
 import { number } from "https://deno.land/x/cliffy@v1.0.0-rc.3/flags/types/number.ts";
+import { Lucid } from "https://deno.land/x/lucid@0.10.1/mod.ts";
 
 if (!import.meta.main) {
   console.error("main.ts is not a module")
@@ -46,6 +47,17 @@ const redeemCommand = new Command()
     redeem(preview || false )
   })
 
+const whoamiCommand = new Command()
+  .description("Returns a public key hash for a mining wallet.")
+  .option("-p, --preview", "Use testnet")
+  .action(async ({ preview }) => {
+    const seed = Deno.readTextFileSync('./seed.txt')
+    const lucid = await Lucid.new(undefined, preview ? "Preview" : "Mainnet")
+    lucid.selectWalletFromSeed(seed)
+    const vkh = lucid.utils.getAddressDetails((await lucid.wallet.address())).paymentCredential?.hash
+    console.log(`You are ${vkh}`)
+  })
+
 await new Command()
   .name("tunapond")
   .description("A pool-aware miner submission interface for Fortuna.")
@@ -55,4 +67,5 @@ await new Command()
   .command("register_pool_this_costs_20_ADA", registerPoolCommand)
   .command("mining_wallet", minerWalletCommand)
   .command("redeem", redeemCommand)
+  .command("whoami", whoamiCommand)
   .parse(Deno.args);

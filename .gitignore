@@ -2,3 +2,6 @@ seed.txt
 .env
 .vscode/
 *.sk
+.unused/
+.env.preview
+*.txt
