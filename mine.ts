@@ -56,6 +56,7 @@ function blockToTargetState(block: Block, poolNonce: string): TargetState {
 
 loadSync({ export: true })
 
+const samplingDifficulty = Number(Deno.env.get("SAMPLING_DIFFICULTY")) || 8
 const cardanoNetwork = Deno.env.get("NETWORK") as Network || "Mainnet" 
 const lucid = await Lucid.new(undefined, cardanoNetwork)
 
@@ -155,7 +156,7 @@ async function submitWork(poolUrl: string, address: string, work: MiningSubmissi
 
 async function getWork(poolUrl: string): Promise<Work | undefined> {
     const address = await lucid.wallet.address()
-    const workResponse = await fetch(`${poolUrl}/work?address=${address}`, {
+    const workResponse = await fetch(`${poolUrl}/work?address=${address}&sample_diff=${samplingDifficulty}`, {
         method: 'GET',
         headers: {
             ['Content-Type']: 'application/json'
@@ -192,12 +193,10 @@ async function displayHashrate(poolUrl: string, minerID: number, startTime: numb
 export async function mine(poolUrl: string) {
     lucid.selectWalletFromSeed(Deno.readTextFileSync("seed.txt"))
     const address = await lucid.wallet.address()
-
     const maybeWork = await getWork(poolUrl)
     if (!maybeWork) {
         throw Error("Can't start main loop, no initial work!");
     }
-
     const startTime = Math.floor(Date.now() / 1000)
     const { nonce, miner_id, current_block, min_zeroes } = maybeWork
     log(`Began mining at ${startTime} for miner ID ${miner_id}. Sampling difficulty is currently ${min_zeroes}.`)

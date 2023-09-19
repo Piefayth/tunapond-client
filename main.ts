@@ -58,6 +58,16 @@ const whoamiCommand = new Command()
     console.log(`You are ${vkh}`)
   })
 
+const whoisthisCommand = new Command()
+  .description("Returns a public key hash for a mining wallet.")
+  .arguments('<address>')
+  .option("-p, --preview", "Use testnet")
+  .action(async ({ preview }, address) => {
+    const lucid = await Lucid.new(undefined, preview ? "Preview" : "Mainnet")
+    const vkh = lucid.utils.getAddressDetails(address).paymentCredential?.hash
+    console.log(`They are ${vkh}`)
+  })
+
 await new Command()
   .name("tunapond")
   .description("A pool-aware miner submission interface for Fortuna.")
@@ -68,4 +78,5 @@ await new Command()
   .command("mining_wallet", minerWalletCommand)
   .command("redeem", redeemCommand)
   .command("whoami", whoamiCommand)
+  .command("whoisthis", whoisthisCommand)
   .parse(Deno.args);

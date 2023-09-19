@@ -4,4 +4,5 @@ seed.txt
 *.sk
 .unused/
 .env.preview
+.env.mainnet
 *.txt

@@ -76,6 +76,7 @@ export async function redeem(isPreview: boolean) {
 
       
     const bankData: BankData = await lucid.datumOf<BankData>(bankUtxo, BankData)
+
     const originalBankedAmount = bankUtxo.assets[tunaAssetName]
     const withdrawAmount = bankData.owners.get(vkh)
     
