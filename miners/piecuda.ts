@@ -57,6 +57,7 @@ export class PieCUDAMiner extends Miner {
         //const status = await this.p?.status
         
         if (this.newBlockFound || this.storedSolutions.length >= SEND_BATCH_SIZE) {
+            this.newBlockFound = false
             const solutions = [...this.storedSolutions]
             this.storedSolutions = []
             return solutions
@@ -104,7 +105,7 @@ export class PieCUDAMiner extends Miner {
                 const [sha, nonce] = lines[i].split('|').map(s => s.trim())
                 if (!this.isPreview && numZeroes(sha) >= currentZeroes) {   // Disable the early-exit in preview because of the low difficulty.
                     this.newBlockFound = true
-                    log(`Found a new block ${sha} | ${nonce}.`)
+                    //log(`Found a new block ${sha} | ${nonce}.`)
                 }
                 solutions.push({ nonce })
             }
